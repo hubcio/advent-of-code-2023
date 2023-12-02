@@ -1,58 +1,30 @@
+use rayon::prelude::*;
+
 #[derive(Debug, PartialEq)]
 enum Color {
-    Red,
-    Green,
-    Blue,
+    Red(usize),
+    Green(usize),
+    Blue(usize),
 }
 
 impl Color {
     fn from(s: &str) -> Option<Self> {
-        match s {
-            "red" => Some(Color::Red),
-            "green" => Some(Color::Green),
-            "blue" => Some(Color::Blue),
+        let mut parts = s.split_whitespace();
+        let number = parts.next()?.parse::<usize>().ok()?;
+        match parts.next()?.chars().next()? {
+            'r' => Some(Color::Red(number)),
+            'g' => Some(Color::Green(number)),
+            'b' => Some(Color::Blue(number)),
             _ => None,
         }
     }
 }
 
 #[derive(Debug)]
-struct Cube {
-    color_type: Color,
-    number: usize,
-}
-
-impl Cube {
-    fn from(s: &str) -> Option<Self> {
-        let parts: Vec<&str> = s.split_whitespace().collect();
-        if parts.len() != 2 {
-            eprintln!("Invalid color: {}", s);
-            return None;
-        }
-
-        let number = parts[0].parse::<usize>();
-        if number.is_err() {
-            eprintln!("Invalid number: {}", parts[0]);
-            return None;
-        }
-
-        let color_type = Color::from(parts[1]);
-        if color_type.is_none() {
-            eprintln!("Invalid color type: {}", parts[1]);
-            return None;
-        }
-        Some(Cube {
-            color_type: color_type.unwrap(),
-            number: number.unwrap(),
-        })
-    }
-}
-
-#[derive(Debug)]
 struct SubGame {
-    reds: Option<Cube>,
-    greens: Option<Cube>,
-    blues: Option<Cube>,
+    reds: Option<Color>,
+    greens: Option<Color>,
+    blues: Option<Color>,
 }
 
 impl From<&str> for SubGame {
@@ -61,11 +33,11 @@ impl From<&str> for SubGame {
         let mut greens = None;
         let mut blues = None;
         for cube in s.split(',') {
-            if let Some(cube) = Cube::from(cube) {
-                match cube.color_type {
-                    Color::Red => reds = Some(cube),
-                    Color::Green => greens = Some(cube),
-                    Color::Blue => blues = Some(cube),
+            if let Some(cube) = Color::from(cube) {
+                match cube {
+                    Color::Red(_) => reds = Some(cube),
+                    Color::Green(_) => greens = Some(cube),
+                    Color::Blue(_) => blues = Some(cube),
                 }
             }
         }
@@ -86,19 +58,26 @@ struct AvailableCubes {
 #[derive(Debug)]
 struct GameData {
     id: usize,
-    cube_subsets: Vec<SubGame>,
+    cube_subsets: [Option<SubGame>; 5],
 }
 
-impl From<(&str, usize)> for GameData {
-    fn from(game_data: (&str, usize)) -> Self {
-        let line = game_data.0.find(':').map(|i| &game_data.0[i + 1..]).unwrap();
+impl From<&str> for GameData {
+    fn from(line: &str) -> Self {
+        let colon_index = line.find(':').unwrap();
+        let id_str = &line[5..colon_index];
+        let id = id_str.trim().parse::<usize>().unwrap();
+        let cube_data_str = &line[colon_index + 1..];
 
-        let mut cube_subsets = vec![];
-        for cube_subset_str in line.split(';') {
-            cube_subsets.push(SubGame::from(cube_subset_str));
+        let mut cube_subsets = [None, None, None, None, None];
+        for (index, cube_subset_str) in cube_data_str.split(';').enumerate() {
+            if index < 5 {
+                cube_subsets[index] = Some(SubGame::from(cube_subset_str));
+            } else {
+                break;
+            }
         }
         GameData {
-            id: game_data.1,
+            id,
             cube_subsets,
         }
     }
@@ -106,52 +85,58 @@ impl From<(&str, usize)> for GameData {
 
 impl GameData {
     fn check(&self, available_cubes: &AvailableCubes) -> usize {
-        for cube_subset in &self.cube_subsets {
-            if let Some(cube) = &cube_subset.reds {
-                if cube.number > available_cubes.red {
-                    return 0;
-                }
-            }
-
-            if let Some(cube) = &cube_subset.greens {
-                if cube.number > available_cubes.green {
-                    return 0;
-                }
-            }
-
-            if let Some(cube) = &cube_subset.blues {
-                if cube.number > available_cubes.blue {
-                    return 0;
-                }
+        for cube_subset in self.cube_subsets.iter().filter_map(|cs| cs.as_ref()) {
+            if !self.has_enough_cubes(cube_subset, available_cubes) {
+                return 0;
             }
         }
         self.id
+    }
+
+    fn has_enough_cubes(&self, cube_subset: &SubGame, available_cubes: &AvailableCubes) -> bool {
+        match &cube_subset.reds {
+            Some(Color::Red(number)) if available_cubes.red < *number => return false,
+            _ => (),
+        }
+        match &cube_subset.greens {
+            Some(Color::Green(number)) if available_cubes.green < *number => return false,
+            _ => (),
+        }
+        match &cube_subset.blues {
+            Some(Color::Blue(number)) if available_cubes.blue < *number => return false,
+            _ => (),
+        }
+        true
     }
 
     fn calculate_minimum_cubes_mul(&self) -> usize {
         let mut reds = 0;
         let mut greens = 0;
         let mut blues = 0;
-        for cube_subset in &self.cube_subsets {
-            if let Some(cube) = &cube_subset.reds {
-                if reds < cube.number {
-                    reds = cube.number;
+
+        for cube_subset in self.cube_subsets.iter().filter_map(|cube_subset| cube_subset.as_ref()) {
+            if let Some(Color::Red(number)) = cube_subset.reds {
+                if reds < number {
+                    reds = number;
                 }
             }
 
-            if let Some(cube) = &cube_subset.greens {
-                if greens < cube.number {
-                    greens = cube.number;
+            if let Some(color) = &cube_subset.greens {
+                if let Color::Green(number) = color {
+                    if greens < *number {
+                        greens = *number;
+                    }
                 }
             }
 
-            if let Some(cube) = &cube_subset.blues {
-                if blues < cube.number {
-                    blues = cube.number;
+            if let Some(color) = &cube_subset.blues {
+                if let Color::Blue(number) = color {
+                    if blues < *number {
+                        blues = *number;
+                    }
                 }
             }
         }
-
         reds * greens * blues
     }
 }
@@ -165,10 +150,9 @@ pub fn part1_first(input: &str) -> usize {
     };
 
     input
-        .lines()
-        .enumerate()
-        .map(|(index, line)| {
-            let game_data = GameData::from((line, index + 1));
+        .par_lines()
+        .map(|line| {
+            let game_data = GameData::from(line);
             game_data.check(&available_cubes)
         }).sum::<usize>()
 }
@@ -176,23 +160,23 @@ pub fn part1_first(input: &str) -> usize {
 #[aoc(day2, part2, FirstTry)]
 pub fn part2_first(input: &str) -> usize {
     input
-        .lines()
-        .enumerate()
-        .map(|(index, line)| {
-            let game_data = GameData::from((line, index + 1));
+        .par_lines()
+        .map(|line| {
+            let game_data = GameData::from(line);
             game_data.calculate_minimum_cubes_mul()
         }).sum::<usize>()
 }
+
 
 #[cfg(test)]
 mod tests {
     use super::{part1_first, part2_first};
 
     static SAMPLE: &str = r#"Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green
-    Game 2: 1 blue, 2 green; 3 green, 4 blue, 1 red; 1 green, 1 blue
-    Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
-    Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
-    Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"#;
+Game 2: 1 blue, 2 green; 3 green, 4 blue, 1 red; 1 green, 1 blue
+Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
+Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
+Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"#;
 
     #[test]
     fn test_part_1_first() {
