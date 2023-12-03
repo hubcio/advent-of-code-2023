@@ -76,10 +76,7 @@ impl From<&str> for GameData {
                 break;
             }
         }
-        GameData {
-            id,
-            cube_subsets,
-        }
+        GameData { id, cube_subsets }
     }
 }
 
@@ -114,26 +111,26 @@ impl GameData {
         let mut greens = 0;
         let mut blues = 0;
 
-        for cube_subset in self.cube_subsets.iter().filter_map(|cube_subset| cube_subset.as_ref()) {
+        for cube_subset in self
+            .cube_subsets
+            .iter()
+            .filter_map(|cube_subset| cube_subset.as_ref())
+        {
             if let Some(Color::Red(number)) = cube_subset.reds {
                 if reds < number {
                     reds = number;
                 }
             }
 
-            if let Some(color) = &cube_subset.greens {
-                if let Color::Green(number) = color {
-                    if greens < *number {
-                        greens = *number;
-                    }
+            if let Some(Color::Green(number)) = &cube_subset.greens {
+                if greens < *number {
+                    greens = *number;
                 }
             }
 
-            if let Some(color) = &cube_subset.blues {
-                if let Color::Blue(number) = color {
-                    if blues < *number {
-                        blues = *number;
-                    }
+            if let Some(Color::Blue(number)) = &cube_subset.blues {
+                if blues < *number {
+                    blues = *number;
                 }
             }
         }
@@ -154,7 +151,8 @@ pub fn part1_first(input: &str) -> usize {
         .map(|line| {
             let game_data = GameData::from(line);
             game_data.check(&available_cubes)
-        }).sum::<usize>()
+        })
+        .sum::<usize>()
 }
 
 #[aoc(day2, part2, FirstTry)]
@@ -164,9 +162,9 @@ pub fn part2_first(input: &str) -> usize {
         .map(|line| {
             let game_data = GameData::from(line);
             game_data.calculate_minimum_cubes_mul()
-        }).sum::<usize>()
+        })
+        .sum::<usize>()
 }
-
 
 #[cfg(test)]
 mod tests {
