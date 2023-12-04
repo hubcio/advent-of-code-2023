@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -92,36 +93,36 @@ impl Grid {
 
     /// Iterate over symbols and find adjacent numbers (even diagonally), sum them up and return
     fn find_sum_of_numbers_adjacent_to_symbols(&self) -> u32 {
-        let mut sum = 0;
-        for coords in self.symbols.0.keys() {
-            let mut adjacent_numbers: HashSet<u32> = HashSet::new();
-
-            for &dy in ADJACENCY_CORDS {
-                for &dx in ADJACENCY_CORDS {
-                    if dy == 0 && dx == 0 {
-                        continue;
-                    }
-                    let coords = Coords {
-                        x: ((coords.x as isize) + dx) as usize,
-                        y: ((coords.y as isize) + dy) as usize,
-                    };
-                    if let Some(&number) = self.numbers.0.get(&coords) {
-                        adjacent_numbers.insert(number);
+        self.symbols
+            .0
+            .par_iter()
+            .map(|(coords, _)| {
+                let mut adjacent_numbers: HashSet<u32> = HashSet::new();
+                for &dy in ADJACENCY_CORDS {
+                    for &dx in ADJACENCY_CORDS {
+                        if dy == 0 && dx == 0 {
+                            continue;
+                        }
+                        let coords = Coords {
+                            x: ((coords.x as isize) + dx) as usize,
+                            y: ((coords.y as isize) + dy) as usize,
+                        };
+                        if let Some(&number) = self.numbers.0.get(&coords) {
+                            adjacent_numbers.insert(number);
+                        }
                     }
                 }
-            }
-            sum += adjacent_numbers.iter().sum::<u32>();
-        }
-        sum
+                adjacent_numbers.iter().sum::<u32>()
+            })
+            .sum()
     }
 
     /// Iterate over '*' symbols and find the ones that are adjacent to exactly
     /// two numbers and multiply them, return sum of all such products
     fn find_sum_of_gear_ratios(&self) -> u32 {
-        let mut sum = 0;
         self.symbols
             .0
-            .iter()
+            .par_iter()
             .filter_map(|(coords, ch)| {
                 if *ch == '*' {
                     let mut adjacent_numbers: HashSet<u32> = HashSet::new();
@@ -152,17 +153,16 @@ impl Grid {
                     None
                 }
             })
-            .for_each(|ratio| sum += ratio);
-        sum
+            .sum()
     }
 }
 
-#[aoc(day3, part1, ParseAllNumbersAndStoreCoordinates)]
+#[aoc(day3, part1, ParseAndStoreEverything)]
 pub fn part1(input: &str) -> u32 {
     Grid::new(input).find_sum_of_numbers_adjacent_to_symbols()
 }
 
-#[aoc(day3, part2, ParseAllNumbersAndStoreCoordinates)]
+#[aoc(day3, part2, ParseAndStoreEverything)]
 pub fn part2(input: &str) -> u32 {
     Grid::new(input).find_sum_of_gear_ratios()
 }
