@@ -1,57 +1,49 @@
 use core::panic;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use rayon::{iter::ParallelIterator, str::ParallelString};
 
-struct ScratchLotteryCard {}
-
-impl ScratchLotteryCard {
-    fn calculate_points(input: &str) -> u32 {
-        input
-            .par_lines()
-            .map(|line| {
-                let colon_index = line.find(':').unwrap();
-                let id_str = &line[5..colon_index];
-                let _id = id_str.trim().parse::<usize>().unwrap();
-                let lottery_str = &line[colon_index + 1..];
-
-                let parts: Vec<&str> = lottery_str.split('|').collect();
-                if parts.len() != 2 {
-                    panic!("Input does not contain exactly one delimiter '|'");
-                }
-
-                let winning_numbers: HashSet<u32> = parts[0]
-                    .split_whitespace()
-                    .filter_map(|num| num.parse::<u32>().ok())
-                    .collect();
-
-                let mut score = 0;
-
-                parts[1]
-                    .split_whitespace()
-                    .filter_map(|num| num.parse::<u32>().ok())
-                    .for_each(|num| {
-                        if winning_numbers.contains(&num) {
-                            if score == 0 {
-                                score = 1;
-                            } else {
-                                score *= 2;
-                            }
-                        }
-                    });
-
-                score
-            })
-            .sum()
-    }
-}
-
 #[aoc(day4, part1, ParseAndStoreEverything)]
 pub fn part1(input: &str) -> u32 {
-    ScratchLotteryCard::calculate_points(input)
+    input
+        .par_lines()
+        .map(|line| {
+            let colon_index = line.find(':').unwrap();
+            let id_str = &line[5..colon_index];
+            let _id = id_str.trim().parse::<usize>().unwrap();
+            let lottery_str = &line[colon_index + 1..];
+
+            let parts: Vec<&str> = lottery_str.split('|').collect();
+            if parts.len() != 2 {
+                panic!("Input does not contain exactly one delimiter '|'");
+            }
+
+            let winning_numbers: HashSet<u32> = parts[0]
+                .split_whitespace()
+                .filter_map(|num| num.parse::<u32>().ok())
+                .collect();
+
+            let mut score = 0;
+
+            parts[1]
+                .split_whitespace()
+                .filter_map(|num| num.parse::<u32>().ok())
+                .for_each(|num| {
+                    if winning_numbers.contains(&num) {
+                        if score == 0 {
+                            score = 1;
+                        } else {
+                            score *= 2;
+                        }
+                    }
+                });
+
+            score
+        })
+        .sum()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, Copy)]
 struct LotteryCard {
     id: usize,
     winnings: usize,
@@ -157,7 +149,7 @@ pub fn part2_iterative(input: &str) -> u32 {
         for n in 1..=card.winnings {
             let next_card_index = card.id - 1 + n;
             if next_card_index < initial_cards.len() {
-                cards.push_back(initial_cards[next_card_index].clone());
+                cards.push_back(initial_cards[next_card_index]);
             }
         }
     }
@@ -165,7 +157,7 @@ pub fn part2_iterative(input: &str) -> u32 {
 }
 
 #[aoc(day4, part2, BetterIterative)]
-pub fn part2_better_iterative(input: &str) -> u32 {
+pub fn part_2_better_iterative(input: &str) -> u32 {
     let mut cards: Vec<LotteryCard> = input
         .lines()
         .map(|line| {
@@ -215,9 +207,92 @@ pub fn part2_better_iterative(input: &str) -> u32 {
     cards.iter().map(|card| card.copies as u32).sum()
 }
 
+#[aoc(day4, part2, Fast_DynamicMemoryAllocation)]
+pub fn part2_fast_dynamic_memory_allocation(input: &str) -> usize {
+    let mut increment_map: HashMap<usize, usize> = HashMap::with_capacity(200);
+    input
+        .lines()
+        .enumerate()
+        .map(|(i, line)| {
+            let colon_index = line.find(':').unwrap();
+            let (winning_part, matching_part) = line[colon_index + 1..].split_once('|').unwrap();
+
+            let winning_numbers: Vec<usize> = winning_part
+                .split_whitespace()
+                .filter_map(|num| num.parse().ok())
+                .collect();
+
+            let matching_numbers = matching_part
+                .split_whitespace()
+                .filter_map(|num| num.parse().ok())
+                .filter(|num| winning_numbers.contains(num))
+                .count();
+
+            let current_card_copies = 1 + increment_map.get(&i).unwrap_or(&0);
+
+            // Apply future winnings
+            for j in 1..=matching_numbers {
+                *increment_map.entry(i + j).or_insert(0) += current_card_copies;
+            }
+
+            current_card_copies
+        })
+        .sum()
+}
+
+#[cfg(test)]
+const WIN_ARRAY_SIZE: usize = 5;
+
+#[cfg(not(test))]
+const WIN_ARRAY_SIZE: usize = 10;
+
+#[cfg(test)]
+const INC_ARRAY_SIZE: usize = 6;
+
+#[cfg(not(test))]
+const INC_ARRAY_SIZE: usize = 200;
+
+#[aoc(day4, part2, Fastest_NoDynamicMemoryAllocation)]
+pub fn part2_no_dynamic_memory_allocation(input: &str) -> usize {
+    let mut increment_array: [usize; INC_ARRAY_SIZE] = [0; INC_ARRAY_SIZE];
+    input
+        .lines()
+        .enumerate()
+        .map(|(i, line)| {
+            let colon_index = line.find(':').unwrap();
+            let (winning_part, matching_part) = line[colon_index + 1..].split_once('|').unwrap();
+
+            let mut winning_numbers = [0; WIN_ARRAY_SIZE];
+            for (index, number_str) in winning_part.split_whitespace().enumerate() {
+                winning_numbers[index] = number_str.parse().unwrap();
+            }
+
+            let matching_numbers = matching_part
+                .split_whitespace()
+                .filter_map(|num| num.parse().ok())
+                .filter(|num| winning_numbers.contains(num))
+                .count();
+
+            let current_card_copies = 1 + increment_array[i];
+
+            // Apply future winnings
+            for j in 1..=matching_numbers {
+                if i + j < INC_ARRAY_SIZE {
+                    increment_array[i + j] += current_card_copies;
+                }
+            }
+
+            current_card_copies
+        })
+        .sum()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{part1, part2_better_iterative, part2_iterative, part2_recurrence};
+    use super::{
+        part1, part2_fast_dynamic_memory_allocation, part2_iterative,
+        part2_no_dynamic_memory_allocation, part2_recurrence, part_2_better_iterative,
+    };
 
     static SAMPLE: &str = r#"Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
 Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
@@ -243,6 +318,16 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11"#;
 
     #[test]
     fn test_part_2_better_iterative() {
-        assert_eq!(part2_better_iterative(SAMPLE), 30);
+        assert_eq!(part_2_better_iterative(SAMPLE), 30);
+    }
+
+    #[test]
+    fn test_part2_fast_dynamic_memory_allocation() {
+        assert_eq!(part2_fast_dynamic_memory_allocation(SAMPLE), 30);
+    }
+
+    #[test]
+    fn test_part2_no_dynamic_memory_allocation() {
+        assert_eq!(part2_no_dynamic_memory_allocation(SAMPLE), 30);
     }
 }
