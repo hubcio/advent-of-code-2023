@@ -1,66 +1,5 @@
-use core::fmt;
-use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, HashMap},
-    str::FromStr,
-};
-
-#[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
-enum Card {
-    #[default]
-    A,
-    K,
-    Q,
-    J,
-    T,
-    N(u8),
-}
-
-impl Card {
-    fn strength(&self) -> u8 {
-        match self {
-            Card::A => 14,
-            Card::K => 13,
-            Card::Q => 12,
-            Card::J => 11,
-            Card::T => 10,
-            Card::N(n) => *n,
-        }
-    }
-}
-
-impl Ord for Card {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.strength().cmp(&other.strength())
-    }
-}
-
-impl PartialOrd for Card {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.strength().cmp(&other.strength()))
-    }
-}
-
-impl From<char> for Card {
-    fn from(s: char) -> Card {
-        match s {
-            'A' => Card::A,
-            'K' => Card::K,
-            'Q' => Card::Q,
-            'J' => Card::J,
-            'T' => Card::T,
-            '9' => Card::N(9),
-            '8' => Card::N(8),
-            '7' => Card::N(7),
-            '6' => Card::N(6),
-            '5' => Card::N(5),
-            '4' => Card::N(4),
-            '3' => Card::N(3),
-            '2' => Card::N(2),
-            n => panic!("Invalid character {n}"),
-        }
-    }
-}
+use core::{fmt, panic};
+use std::{cmp::Ordering, collections::BTreeSet};
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
 enum HandType {
@@ -74,7 +13,51 @@ enum HandType {
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-struct Cards([Card; 5]);
+struct Cards([u8; 5]);
+
+impl From<(&str, bool)> for Cards {
+    fn from((line, use_wildcard): (&str, bool)) -> Self {
+        let mut cards = Cards([0; 5]);
+        line.chars().take(5).enumerate().for_each(|(index, ch)| {
+            cards.0[index] = if use_wildcard {
+                match ch {
+                    'J' => 0,
+                    '2' => 1,
+                    '3' => 2,
+                    '4' => 3,
+                    '5' => 4,
+                    '6' => 5,
+                    '7' => 6,
+                    '8' => 7,
+                    '9' => 8,
+                    'T' => 9,
+                    'Q' => 10,
+                    'K' => 11,
+                    'A' => 12,
+                    _ => panic!("Invalid face"),
+                }
+            } else {
+                match ch {
+                    '2' => 0,
+                    '3' => 1,
+                    '4' => 2,
+                    '5' => 3,
+                    '6' => 4,
+                    '7' => 5,
+                    '8' => 6,
+                    '9' => 7,
+                    'T' => 8,
+                    'J' => 9,
+                    'Q' => 10,
+                    'K' => 11,
+                    'A' => 12,
+                    _ => panic!("Invalid face"),
+                }
+            };
+        });
+        cards
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 struct Hand {
@@ -83,26 +66,22 @@ struct Hand {
     bid: u64,
 }
 
-impl FromStr for Hand {
-    type Err = ();
+impl From<(&str, bool)> for Hand {
+    fn from(s: (&str, bool)) -> Self {
+        let cards = Cards::from((s.0, s.1));
+        let hand_type = if s.1 {
+            determine_hand_type_with_joker(&cards)
+        } else {
+            determine_hand_type(&cards)
+        };
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut cards: [Card; 5] = Default::default();
-        for (i, c) in s.chars().enumerate() {
-            cards[i] = Card::from(c);
-            if i == 4 {
-                break;
-            }
-        }
-        let hand_type = determine_hand_type(&cards);
+        let bid = s.0[6..].parse::<u64>().unwrap();
 
-        let bid = s[6..].parse::<u64>().unwrap();
-
-        Ok(Hand {
-            cards: Cards(cards),
+        Hand {
+            cards,
             hand_type,
             bid,
-        })
+        }
     }
 }
 
@@ -129,24 +108,79 @@ impl Ord for Hand {
     }
 }
 
-fn determine_hand_type(cards: &[Card; 5]) -> HandType {
-    let mut freq_map = HashMap::new();
-
-    for card in cards {
-        *freq_map.entry(card).or_insert(0) += 1;
+fn determine_hand_type(cards: &Cards) -> HandType {
+    let mut frequencies = [0; 13];
+    for card in &cards.0 {
+        frequencies[*card as usize] += 1;
     }
 
-    let mut freqs: Vec<_> = freq_map.values().copied().collect();
-    freqs.sort_unstable_by(|a, b| b.cmp(a));
+    let (mut max_freq, mut second_max_freq) = (0, 0);
 
-    match freqs.as_slice() {
-        [5, ..] => HandType::FiveOfAKind,
-        [4, ..] => HandType::FourOfAKind,
-        [3, 2, ..] | [2, 3, ..] => HandType::FullHouse,
-        [3, ..] => HandType::ThreeOfAKind,
-        [2, 2, ..] => HandType::TwoPair,
-        [2, ..] => HandType::OnePair,
+    for &freq in frequencies.iter() {
+        if freq > max_freq {
+            second_max_freq = max_freq;
+            max_freq = freq;
+        } else if freq > second_max_freq {
+            second_max_freq = freq;
+        }
+    }
+    match (max_freq, second_max_freq) {
+        (5, _) => HandType::FiveOfAKind,
+        (4, _) => HandType::FourOfAKind,
+        (3, 2) | (2, 3) => HandType::FullHouse,
+        (3, _) => HandType::ThreeOfAKind,
+        (2, 2) => HandType::TwoPair,
+        (2, _) => HandType::OnePair,
         _ => HandType::HighCard,
+    }
+}
+
+fn determine_hand_type_with_joker(cards: &Cards) -> HandType {
+    let mut frequencies = [0; 13];
+    let mut joker_count = 0;
+
+    for card in &cards.0 {
+        if *card == 0 {
+            joker_count += 1;
+        } else {
+            frequencies[*card as usize] += 1;
+        }
+    }
+
+    let (mut max_freq, mut second_max_freq) = (0, 0);
+    for &freq in frequencies.iter() {
+        if freq > max_freq {
+            second_max_freq = max_freq;
+            max_freq = freq;
+        } else if freq > second_max_freq {
+            second_max_freq = freq;
+        }
+    }
+
+    let hand_type = match (max_freq, second_max_freq) {
+        (5, _) => HandType::FiveOfAKind,
+        (4, _) => HandType::FourOfAKind,
+        (3, 2) | (2, 3) => HandType::FullHouse,
+        (3, _) => HandType::ThreeOfAKind,
+        (2, 2) => HandType::TwoPair,
+        (2, _) => HandType::OnePair,
+        _ => HandType::HighCard,
+    };
+
+    match (joker_count, hand_type) {
+        (5, _) | (4, _) => HandType::FiveOfAKind,
+        (3, HandType::OnePair) => HandType::FiveOfAKind,
+        (3, _) => HandType::FourOfAKind,
+        (2, HandType::ThreeOfAKind) => HandType::FiveOfAKind,
+        (2, HandType::OnePair) => HandType::FourOfAKind,
+        (2, _) => HandType::ThreeOfAKind,
+        (1, HandType::FourOfAKind) => HandType::FiveOfAKind,
+        (1, HandType::ThreeOfAKind) => HandType::FourOfAKind,
+        (1, HandType::TwoPair) => HandType::FullHouse,
+        (1, HandType::OnePair) => HandType::ThreeOfAKind,
+        (1, _) => HandType::OnePair,
+        (0, _) => hand_type,
+        _ => panic!("Invalid hand type"),
     }
 }
 
@@ -154,13 +188,25 @@ fn determine_hand_type(cards: &[Card; 5]) -> HandType {
 pub fn part_1(input: &str) -> u64 {
     input
         .lines()
-        .map(|h| Hand::from_str(h).unwrap())
-        .map(|hand| (hand, hand.bid))
-        .collect::<BTreeMap<Hand, u64>>()
+        .map(|hand_str| Hand::from((hand_str, false)))
+        .collect::<BTreeSet<Hand>>()
         .iter()
-        .take(5)
+        .rev()
         .enumerate()
-        .map(|(index, (_, bid))| bid * (5 - index as u64))
+        .map(|(index, hand)| hand.bid * (index as u64 + 1))
+        .sum()
+}
+
+#[aoc(day7, part2)]
+pub fn part_2(input: &str) -> u64 {
+    input
+        .lines()
+        .map(|hand_str| Hand::from((hand_str, true)))
+        .collect::<BTreeSet<Hand>>()
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(index, hand)| hand.bid * (index as u64 + 1))
         .sum()
 }
 
@@ -178,25 +224,17 @@ QQQJA 483"#;
     fn test_part_1() {
         assert_eq!(part_1(SAMPLE), 6440);
     }
-}
 
-impl fmt::Display for Card {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Card::A => write!(f, "A"),
-            Card::K => write!(f, "K"),
-            Card::Q => write!(f, "Q"),
-            Card::J => write!(f, "J"),
-            Card::T => write!(f, "T"),
-            Card::N(n) => write!(f, "{}", n),
-        }
+    #[test]
+    fn test_part_2() {
+        assert_eq!(part_2(SAMPLE), 5905);
     }
 }
 
 impl fmt::Display for Cards {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for card in self.0.iter() {
-            write!(f, "{}", card)?;
+            write!(f, "{} ", card)?;
         }
         Ok(())
     }
