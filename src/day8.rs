@@ -139,11 +139,11 @@ XXX = (XXX, XXX)"#;
 
     #[test]
     fn test_camels_map_2() {
-        assert_eq!(camels_map(SAMPLE_2), 6 + 1);
+        assert_eq!(camels_map(SAMPLE_2), 6);
     }
 
     #[test]
     fn test_ghosts_map() {
-        assert_eq!(ghosts_map(SAMPLE_3), 6 + 1);
+        assert_eq!(ghosts_map(SAMPLE_3), 6);
     }
 }
